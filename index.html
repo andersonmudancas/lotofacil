@@ -47,7 +47,7 @@
     }
 
     /* Controles */
-    .controle {
+    .controle-container {
       background: #f3e5f5;
       padding: 20px;
       border-radius: 12px;
@@ -55,18 +55,32 @@
       margin-bottom: 20px;
       max-width: 800px;
       width: 100%;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      justify-content: center;
-      align-items: center;
     }
-    .controle label {
+    .controle-modos {
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+    }
+    .controle-modos label {
+        font-weight: bold;
+        color: #6a1b9a;
+        cursor: pointer;
+    }
+    .controle-inputs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+        align-items: center;
+    }
+    .controle-inputs label {
       font-weight: bold;
       color: #6a1b9a;
       user-select: none;
     }
-    .controle input {
+    .controle-inputs input {
       padding: 10px;
       border-radius: 6px;
       border: 1px solid #6a1b9a;
@@ -74,7 +88,7 @@
       font-size: 1rem;
       text-align: center;
     }
-    .controle button {
+    .controle-container button {
       background: #6a1b9a;
       color: white;
       padding: 10px 20px;
@@ -84,9 +98,12 @@
       cursor: pointer;
       transition: background 0.3s;
     }
-    .controle button:hover {
+    .controle-container button:hover {
       background: #4a148c;
     }
+    .input-group { display: none; }
+    .input-group.active { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; }
+
 
     /* Tabs */
     .tabs {
@@ -191,7 +208,7 @@
     }
 
     @media (max-width: 600px) {
-      .controle {
+      .controle-inputs, .input-group.active {
         flex-direction: column;
         align-items: stretch;
       }
@@ -209,19 +226,34 @@
 
   <h1>🎯 Lotofácil - Análise Completa</h1>
 
-  <!-- Botão no topo fora das abas -->
   <button id="btnGerarTop" onclick="gerarJogosComBaseNos20()">🎲 Gerar 3 Jogos com base nos 20 mais sorteados</button>
 
-  <!-- Controle de intervalo -->
-  <div class="controle">
-    <label for="inicio">Concurso de:</label>
-    <input type="number" id="inicio" placeholder="Ex: 3100" min="1" />
-    <label for="fim">até:</label>
-    <input type="number" id="fim" placeholder="Ex: 3110" min="1" />
-    <button onclick="carregarIntervalo()">Buscar</button>
+  <div class="controle-container">
+    <div class="controle-modos">
+      <label><input type="radio" name="tipoBusca" value="quantidade" onchange="atualizarModoBusca()" checked> Por Quantidade</label>
+      <label><input type="radio" name="tipoBusca" value="especifico" onchange="atualizarModoBusca()"> Por Concurso</label>
+      <label><input type="radio" name="tipoBusca" value="intervalo" onchange="atualizarModoBusca()"> Por Intervalo</label>
+    </div>
+    <div class="controle-inputs">
+      <div id="buscaQuantidade" class="input-group active">
+        <label for="quantidade">Últimos Concursos:</label>
+        <input type="number" id="quantidade" placeholder="Ex: 50" value="10">
+      </div>
+      <div id="buscaEspecifico" class="input-group">
+        <label for="concursoUnico">Nº do Concurso:</label>
+        <input type="number" id="concursoUnico" placeholder="Ex: 3110">
+      </div>
+      <div id="buscaIntervalo" class="input-group">
+        <label for="inicio">De:</label>
+        <input type="number" id="inicio" placeholder="Ex: 3100">
+        <label for="fim">Até:</label>
+        <input type="number" id="fim" placeholder="Ex: 3110">
+      </div>
+      <button onclick="iniciarBusca()">Buscar</button>
+    </div>
   </div>
 
-  <!-- Abas -->
+
   <div class="tabs">
     <div class="tab-buttons">
       <button class="active" onclick="abrirAba('frequencia')">📊 Frequência</button>
@@ -230,6 +262,7 @@
     </div>
 
     <div id="frequencia" class="tab-content active">
+      <h2 id="tituloResultados">Resultados</h2>
       <div id="jogosContainer" class="jogos"></div>
       <canvas id="graficoFrequencia" width="800" height="400"></canvas>
     </div>
@@ -253,6 +286,10 @@
     let top20 = [];
     let jogosGerados = [];
 
+    // --- FUNÇÕES DE INICIALIZAÇÃO E UI ---
+
+    window.addEventListener('DOMContentLoaded', carregarUltimoConcurso);
+
     function abrirAba(id) {
       document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
       document.getElementById(id).classList.add('active');
@@ -260,42 +297,117 @@
       document.querySelector(`.tab-buttons button[onclick="abrirAba('${id}')"]`).classList.add('active');
     }
 
+    function atualizarModoBusca() {
+        document.querySelectorAll('.input-group').forEach(el => el.classList.remove('active'));
+        const modo = document.querySelector('input[name="tipoBusca"]:checked').value;
+        if (modo === 'quantidade') document.getElementById('buscaQuantidade').classList.add('active');
+        if (modo === 'especifico') document.getElementById('buscaEspecifico').classList.add('active');
+        if (modo === 'intervalo') document.getElementById('buscaIntervalo').classList.add('active');
+    }
+
+    // --- FUNÇÕES DE BUSCA DE DADOS ---
+
     async function buscarConcurso(n) {
       const cache = JSON.parse(localStorage.getItem('concursos') || '{}');
       if (cache[n]) return cache[n];
       try {
-        const res = await fetch(API_URL + n);
+        // A API usa 'latest' para o último concurso
+        const endpoint = (n === 'latest') ? n : String(n);
+        const res = await fetch(API_URL + endpoint);
         if (!res.ok) return null;
         const data = await res.json();
-        cache[n] = data;
+        cache[data.concurso] = data; // Cache pelo número do concurso
         localStorage.setItem('concursos', JSON.stringify(cache));
         return data;
       } catch (error) {
+        console.error("Erro ao buscar concurso:", error);
         return null;
       }
     }
 
-    async function carregarIntervalo() {
+    function iniciarBusca() {
+        const modo = document.querySelector('input[name="tipoBusca"]:checked').value;
+        if (modo === 'quantidade') buscarPorQuantidade();
+        if (modo === 'especifico') buscarPorConcursoUnico();
+        if (modo === 'intervalo') buscarPorIntervalo();
+    }
+
+    async function carregarUltimoConcurso() {
+        const ultimo = await buscarConcurso('latest');
+        if (ultimo && ultimo.dezenas) {
+            processarDados([ultimo], `Último Resultado (Concurso ${ultimo.concurso})`);
+            document.getElementById('concursoUnico').placeholder = `Último: ${ultimo.concurso}`;
+            document.getElementById('fim').placeholder = `Último: ${ultimo.concurso}`;
+        } else {
+            alert('Não foi possível carregar o último resultado.');
+        }
+    }
+
+    async function buscarPorIntervalo() {
       const inicio = +document.getElementById('inicio').value;
       const fim = +document.getElementById('fim').value;
       if (!inicio || !fim || inicio > fim) {
-        alert("Intervalo inválido.");
+        alert("Intervalo inválido. Verifique os números digitados.");
         return;
       }
+      await processarIntervalo(inicio, fim, `Resultados dos concursos ${inicio} a ${fim}`);
+    }
 
-      concursos = [];
+    async function buscarPorConcursoUnico() {
+        const num = +document.getElementById('concursoUnico').value;
+        if (!num || num <= 0) {
+            alert("Número de concurso inválido.");
+            return;
+        }
+        const concurso = await buscarConcurso(num);
+        if (concurso && concurso.dezenas) {
+            processarDados([concurso], `Resultado do Concurso ${concurso.concurso}`);
+        } else {
+            alert(`Concurso ${num} não encontrado.`);
+        }
+    }
+
+    async function buscarPorQuantidade() {
+        const quantidade = +document.getElementById('quantidade').value;
+        if (!quantidade || quantidade <= 0) {
+            alert("Quantidade inválida.");
+            return;
+        }
+        const ultimo = await buscarConcurso('latest');
+        if (!ultimo) {
+            alert('Não foi possível determinar o último concurso para iniciar a busca.');
+            return;
+        }
+        const fim = ultimo.concurso;
+        const inicio = fim - quantidade + 1;
+        await processarIntervalo(inicio, fim, `Últimos ${quantidade} Resultados (Concursos ${inicio} a ${fim})`);
+    }
+
+    async function processarIntervalo(inicio, fim, titulo) {
+      const promessas = [];
       for (let i = inicio; i <= fim; i++) {
-        const c = await buscarConcurso(i);
-        if (c && c.dezenas) concursos.push(c);
+        promessas.push(buscarConcurso(i));
       }
-      if (concursos.length === 0) {
-        alert("Nenhum concurso encontrado no intervalo informado.");
+      const resultados = await Promise.all(promessas);
+      const concursosValidos = resultados.filter(c => c && c.dezenas);
+
+      if (concursosValidos.length === 0) {
+        alert("Nenhum concurso encontrado no período informado.");
         return;
       }
-      mostrarJogos(concursos);
-      gerarGrafico(concursos);
-      calcularMaisSorteados(concursos);
-      alert(`Dados carregados de ${concursos.length} concursos.`);
+      processarDados(concursosValidos, titulo);
+      alert(`${concursosValidos.length} concursos carregados com sucesso!`);
+    }
+
+
+    // --- FUNÇÕES DE PROCESSAMENTO E EXIBIÇÃO ---
+
+    function processarDados(listaConcursos, titulo) {
+        concursos = listaConcursos; // Atualiza a variável global
+        document.getElementById('tituloResultados').innerText = titulo;
+        mostrarJogos(concursos);
+        gerarGrafico(concursos);
+        calcularMaisSorteados(concursos);
     }
 
     function mostrarJogos(lista) {
@@ -330,7 +442,7 @@
         },
         options: {
           responsive: true,
-          scales: { y: { beginAtZero: true } },
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
           plugins: {
             legend: { display: true },
             tooltip: { enabled: true }
@@ -347,10 +459,10 @@
       for (let i = 1; i <= 25; i++) {
         ranking.push({ numero: i.toString().padStart(2, '0'), vezes: freq[i] });
       }
-      ranking.sort((a, b) => b.vezes - a.vezes);
+      ranking.sort((a, b) => b.vezes - a.vezes || +a.numero - +b.numero);
 
       const top15 = ranking.slice(0, 15);
-      top20 = ranking.slice(0, 20);
+      top20 = ranking.slice(0, 20); // Atualiza a variável global para o gerador de jogos
 
       document.getElementById('listaTop15').innerHTML = top15.map(x => `<li><strong>${x.numero}</strong> – ${x.vezes} vezes</li>`).join('');
       document.getElementById('listaTop20').innerHTML = top20.map(x => `<li><strong>${x.numero}</strong> – ${x.vezes} vezes</li>`).join('');
@@ -380,19 +492,17 @@
 
         if (soma >= 180 && soma <= 220 && pares >= 6 && pares <= 9) {
           jogo.sort((a, b) => +a - +b);
-          // Verifica se o jogo já existe
           if (!jogosGerados.some(j => j.join(',') === jogo.join(','))) {
             jogosGerados.push(jogo);
           }
         }
       }
 
-      if (jogosGerados.length === 0) {
-        alert('Não foi possível gerar jogos que atendam aos critérios. Tente novamente.');
-        return;
+      if (jogosGerados.length < 3) {
+        alert(`Não foi possível gerar 3 jogos que atendam a todos os critérios. Foram gerados ${jogosGerados.length}. Tente com um conjunto de dados maior.`);
       }
+      if (jogosGerados.length === 0) return;
 
-      // Exibir lista com detalhes
       const lista = jogosGerados.map((jogo, i) => {
         const soma = jogo.reduce((a,b) => a + Number(b), 0);
         const pares = jogo.filter(n => Number(n) % 2 === 0).length;
